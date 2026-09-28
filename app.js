@@ -80,24 +80,94 @@
   }
 
   // ── Scrubber ───────────────────────────────────────────────────────────
-  const stage = $("#stage"), wrap = $(".stage-wrap"), slider = $("#slider"), ring = $("#ring");
-  slider.max = N - 1;
+  const stage = $("#stage"), wrap = $(".stage-wrap"), ring = $("#ring");
 
-  // Ring of tick marks, rotated as time moves.
-  const g = document.createElementNS(NS, "g");
-  ring.appendChild(g);
-  for (let k = 0; k < 120; k++) {
-    const a = (k / 120) * Math.PI * 2, long = k % 10 === 0;
-    const r1 = long ? 88 : 92, r2 = 97;
-    const l = document.createElementNS(NS, "line");
-    l.setAttribute("x1", 100 + Math.cos(a) * r1); l.setAttribute("y1", 100 + Math.sin(a) * r1);
-    l.setAttribute("x2", 100 + Math.cos(a) * r2); l.setAttribute("y2", 100 + Math.sin(a) * r2);
-    l.setAttribute("stroke", "currentColor"); l.setAttribute("stroke-width", long ? 1.2 : 0.6);
-    g.appendChild(l);
+  // The ring is the time dial: 12 o'clock is week 1, going clockwise, with a
+  // small gap at the top so the first and last weeks don't touch.
+  const GAP = 24, START = GAP / 2, SWEEP = 360 - GAP, R = 93;
+  const polar = (deg, r) => {
+    const a = ((deg - 90) * Math.PI) / 180;
+    return [100 + Math.cos(a) * r, 100 + Math.sin(a) * r];
+  };
+  const weekAngle = (i) => START + (N > 1 ? i / (N - 1) : 0) * SWEEP;
+
+  // Mandala: layers counter-rotate as time moves (and drift slowly on their own).
+  const ticks = [...Array(120)].map((_, k) => {
+    const long = k % 10 === 0;
+    const [x1, y1] = polar(k * 3, long ? 83 : 85.5), [x2, y2] = polar(k * 3, 88);
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${long ? 1 : 0.5}"/>`;
+  }).join("");
+  const square = (rot) => [0, 90, 180, 270].map((a) => polar(a + rot, 119).join(",")).join(" ");
+  const RUNES = "ᚠᚢᚦᚨᚱᚲᚷᚹ·ᚺᚾᛁᛃᛇᛈᛉᛊ·ᛏᛒᛖᛗᛚᛜᛞᛟ·";
+  ring.innerHTML = `
+    <defs>
+      <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="1.6" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <path id="rune-path" d="M100,-5 a105,105 0 1,1 -0.01,0"/>
+    </defs>
+    <g class="deco" filter="url(#glow)">
+      <g class="spin rev"><g class="l-outer">
+        <polygon points="${square(0)}"/><polygon points="${square(45)}"/>
+        <circle cx="100" cy="100" r="112"/><circle cx="100" cy="100" r="118" stroke-dasharray="1 3"/>
+      </g></g>
+      <g class="spin"><g class="l-runes">
+        <circle cx="100" cy="100" r="99"/>
+        <text><textPath href="#rune-path" textLength="655" lengthAdjust="spacing">${RUNES.repeat(3)}</textPath></text>
+      </g></g>
+      <g class="l-ticks">${ticks}<circle cx="100" cy="100" r="81" stroke-dasharray="1 4"/></g>
+    </g>`;
+  const layers = ["outer", "runes", "ticks"].map((n) => ring.querySelector(".l-" + n));
+
+  // Dial: track, progress arc, week markers, handle. pathLength=360 → dash units are degrees.
+  const arc = (cls) => `<circle class="${cls}" cx="100" cy="100" r="${R}" pathLength="360" transform="rotate(${START - 90} 100 100)"/>`;
+  ring.insertAdjacentHTML("beforeend",
+    `<g class="dial">${arc("track")}${arc("progress")}
+     <g class="marks">${weeks.map((_, i) => { const [cx, cy] = polar(weekAngle(i), R); return `<circle cx="${cx}" cy="${cy}" r="2.2"/>`; }).join("")}</g>
+     <circle class="handle" r="5.5"/></g>`);
+  ring.querySelector(".track").setAttribute("stroke-dasharray", `${SWEEP} 360`);
+  const progress = ring.querySelector(".progress"), handle = ring.querySelector(".handle");
+  const marks = [...ring.querySelectorAll(".marks circle")];
+
+  // Sparks thrown off the handle while time is being wound.
+  const canvas = $("#sparks"), ctx = canvas.getContext("2d");
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const parts = [];
+  let sparkLoop = 0, lastV = 0;
+  const fitCanvas = () => {
+    const d = devicePixelRatio || 1;
+    canvas.width = canvas.clientWidth * d; canvas.height = canvas.clientHeight * d;
+  };
+  addEventListener("resize", fitCanvas);
+  function emit(deg, amount) {
+    if (calm) return;
+    const [hx, hy] = polar(deg, R);
+    const dir = amount > 0 ? 1 : -1;
+    for (let k = 0; k < Math.min(14, Math.abs(amount) * 60 + 1); k++) {
+      const tangent = ((deg - 90 + (dir > 0 ? -90 : 90)) * Math.PI) / 180 + (Math.random() - 0.5) * 1.4;
+      const sp = 0.4 + Math.random() * 1.6;
+      parts.push({ x: hx, y: hy, vx: Math.cos(tangent) * sp, vy: Math.sin(tangent) * sp, life: 1, hot: Math.random() < 0.35 });
+    }
+    if (!sparkLoop) sparkLoop = requestAnimationFrame(drawSparks);
   }
-  g.insertAdjacentHTML("beforeend",
-    `<circle cx="100" cy="100" r="85" fill="none" stroke="currentColor" stroke-width=".6" stroke-dasharray="1 4"/>
-     <circle cx="100" cy="100" r="98.5" fill="none" stroke="currentColor" stroke-width=".8"/>`);
+  function drawSparks() {
+    const s = canvas.width / 240; // canvas spans viewBox -20…220
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const green = getComputedStyle(ring).color;
+    for (let k = parts.length - 1; k >= 0; k--) {
+      const p = parts[k];
+      p.x += p.vx; p.y += p.vy; p.vx *= 0.96; p.vy *= 0.96; p.life -= 0.025;
+      if (p.life <= 0) { parts.splice(k, 1); continue; }
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.hot ? "#fff6c2" : green;
+      ctx.beginPath();
+      ctx.arc((p.x + 20) * s, (p.y + 20) * s, (p.hot ? 0.9 : 1.3) * p.life * s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    sparkLoop = parts.length ? requestAnimationFrame(drawSparks) : 0;
+  }
 
   function buildFrames() {
     stage.innerHTML = "";
@@ -115,9 +185,17 @@
     [...stage.children].forEach((img, i) => {
       img.style.opacity = i === lo ? 1 : i === lo + 1 ? frac : 0;
     });
-    g.setAttribute("transform", `rotate(${v * 60} 100 100)`);
-    slider.value = v;
+    [15, -35, 60].forEach((speed, k) => layers[k].setAttribute("transform", `rotate(${v * speed} 100 100)`));
+    const deg = N > 1 ? (v / (N - 1)) * SWEEP : 0;
+    progress.setAttribute("stroke-dasharray", `${deg} 360`);
+    const [hx, hy] = polar(START + deg, R);
+    handle.setAttribute("cx", hx); handle.setAttribute("cy", hy);
+    if (wrap.classList.contains("scrubbing") && v !== lastV) emit(START + deg, v - lastV);
+    lastV = v;
+    marks.forEach((m, k) => m.classList.toggle("past", k <= v + 1e-6));
     const i = Math.round(v);
+    wrap.setAttribute("aria-valuenow", weeks[i].week);
+    wrap.setAttribute("aria-valuetext", `Week ${weeks[i].week}, ${fmtDate(weeks[i].date)}`);
     $("#scrub-week").textContent = `Week ${weeks[i].week}`;
     $("#scrub-date").textContent = fmtDate(weeks[i].date, { weekday: "short", month: "short", day: "numeric" });
   }
@@ -137,31 +215,51 @@
   }
   const settle = () => { const i = Math.round(v); tweenTo(i, 250); if (i !== sel) select(i); };
 
-  // Drag on the tomato: full stage width = the whole timeline.
+  // Pointer → clockwise degrees from 12 o'clock, plus distance from center (0–1).
+  const pointerAngle = (e) => {
+    const r = wrap.getBoundingClientRect();
+    const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    return { deg: ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360, dist: Math.hypot(dx, dy) / (r.width / 2) };
+  };
+  const vAtAngle = (deg) => {
+    if (deg < START) return 0;               // in the top gap, just past 12 o'clock
+    if (deg > START + SWEEP) return N - 1;   // in the top gap, just before 12 o'clock
+    return ((deg - START) / SWEEP) * (N - 1);
+  };
+
+  // Press on the ring to jump there; press anywhere and move in a circle to wind time.
+  // Movement is accumulated relative to the last angle, so spinning past either end
+  // just stops there instead of jumping to the other side.
   let drag = null;
-  stage.addEventListener("pointerdown", (e) => {
+  wrap.addEventListener("pointerdown", (e) => {
     stopPlay(); cancelAnimationFrame(anim);
-    drag = { x: e.clientX, v };
-    stage.setPointerCapture(e.pointerId);
+    const { deg, dist } = pointerAngle(e);
+    if (dist > 1.02) return;
+    if (dist > 0.8) setV(vAtAngle(deg));
+    drag = { last: deg };
+    wrap.setPointerCapture(e.pointerId);
     wrap.classList.add("scrubbing");
+    e.preventDefault();
   });
-  stage.addEventListener("pointermove", (e) => {
+  wrap.addEventListener("pointermove", (e) => {
     if (!drag) return;
-    setV(drag.v + ((e.clientX - drag.x) / stage.clientWidth) * (N - 1));
+    const { deg } = pointerAngle(e);
+    const delta = ((deg - drag.last + 540) % 360) - 180;
+    drag.last = deg;
+    setV(v + (delta / SWEEP) * (N - 1));
   });
   const endDrag = () => { if (!drag) return; drag = null; wrap.classList.remove("scrubbing"); settle(); };
-  stage.addEventListener("pointerup", endDrag);
-  stage.addEventListener("pointercancel", endDrag);
+  wrap.addEventListener("pointerup", endDrag);
+  wrap.addEventListener("pointercancel", endDrag);
 
-  slider.addEventListener("input", () => { stopPlay(); wrap.classList.add("scrubbing"); setV(+slider.value); });
-  slider.addEventListener("change", () => { wrap.classList.remove("scrubbing"); settle(); });
-
-  stage.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-      e.preventDefault();
-      select(sel + (e.key === "ArrowRight" ? 1 : -1));
-    }
+  wrap.addEventListener("keydown", (e) => {
+    const step = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key];
+    if (step) { e.preventDefault(); select(sel + step); }
+    if (e.key === "Home") { e.preventDefault(); select(0); }
+    if (e.key === "End") { e.preventDefault(); select(N - 1); }
   });
+  wrap.setAttribute("aria-valuemin", weeks[0].week);
+  wrap.setAttribute("aria-valuemax", weeks[N - 1].week);
 
   // Play forward through time (restarts from week 1 if at the end).
   const playBtn = $("#play");
@@ -201,7 +299,9 @@
   function renderDetail(i) {
     const w = weeks[i];
     [...tl.querySelectorAll(".tl-btn")].forEach((b, k) => b.setAttribute("aria-current", k === i));
-    tl.children[i].scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    const li = tl.children[i];
+    if (li.offsetLeft < tl.scrollLeft || li.offsetLeft + li.offsetWidth > tl.scrollLeft + tl.clientWidth)
+      tl.scrollTo({ left: li.offsetLeft - tl.clientWidth / 2 + li.offsetWidth / 2, behavior: "smooth" });
     detail.innerHTML = `
       <figure><img alt="Photo, week ${w.week}" src="${src(i, "photo")}"><figcaption><strong>Photo</strong></figcaption></figure>
       <figure><img alt="Drawing, week ${w.week}" src="${src(i, "drawing")}"><figcaption><strong>Drawing</strong> · ${w.style || "—"}</figcaption></figure>
@@ -278,6 +378,7 @@
   onSelect((i) => chartSel.forEach((fn) => fn(i)));
 
   // ── Go ─────────────────────────────────────────────────────────────────
+  fitCanvas();
   buildFrames();
   render();
   select(0);

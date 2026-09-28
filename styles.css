@@ -66,28 +66,55 @@ h2 { font-size: 28px; }
 .seg button { border: 0; background: none; padding: 6px 14px; border-radius: 999px; cursor: pointer; font-size: 14px; color: var(--ink-2); }
 .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
 
-.stage-wrap { position: relative; width: min(100%, 520px); aspect-ratio: 1; margin: 0 auto; }
-.ring { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--time); opacity: .35; transition: opacity .3s; pointer-events: none; }
-.stage-wrap.scrubbing .ring { opacity: .95; filter: drop-shadow(0 0 6px var(--time)); }
+.scrubber { overflow-x: clip; }
+.stage-wrap {
+  position: relative; width: min(100% - 64px, 460px); aspect-ratio: 1; margin: 48px auto 40px;
+  touch-action: none; cursor: grab; outline: none; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.stage-wrap.scrubbing { cursor: grabbing; }
 .stage {
   position: absolute; inset: 9%;
   border-radius: 50%; overflow: hidden;
   background: var(--surface);
   box-shadow: var(--shadow);
-  cursor: ew-resize; touch-action: pan-y;
-  outline: none;
+  transition: box-shadow .4s;
 }
-.stage:focus-visible { box-shadow: 0 0 0 3px var(--time), var(--shadow); }
-.stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; user-select: none; -webkit-user-drag: none; }
-.stage-wrap.scrubbing .stage { box-shadow: 0 0 0 2px var(--time), 0 0 40px color-mix(in srgb, var(--time) 45%, transparent); }
+.stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; -webkit-user-drag: none; }
+/* Time-stone tint that washes over the tomato while time is bent */
+.stage::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, transparent 35%, color-mix(in srgb, var(--time) 55%, transparent) 100%);
+  mix-blend-mode: screen; opacity: 0; transition: opacity .35s;
+}
+.scrubbing .stage::after { opacity: .9; }
+.scrubbing .stage { box-shadow: 0 0 0 2px var(--time), 0 0 48px color-mix(in srgb, var(--time) 55%, transparent); }
+.stage-wrap:focus-visible .stage { box-shadow: 0 0 0 3px var(--time), var(--shadow); }
 
-.scrub-meta { margin-top: 12px; display: flex; justify-content: center; gap: 12px; align-items: baseline; }
+.ring, .sparks { position: absolute; inset: -10%; width: 120%; height: 120%; pointer-events: none; }
+.ring { color: var(--time); overflow: visible; }
+.ring .deco { fill: none; stroke: currentColor; stroke-width: .6; opacity: .4; transition: opacity .35s; }
+.ring .deco polygon { stroke-width: .5; opacity: .7; }
+.ring .deco text { fill: currentColor; stroke: none; font-size: 7px; font-family: "Segoe UI Symbol", "Noto Sans Runic", "Apple Symbols", serif; }
+.scrubbing .ring .deco { opacity: 1; }
+.ring .spin { transform-box: view-box; transform-origin: 100px 100px; animation: spin 120s linear infinite; }
+.ring .spin.rev { animation-direction: reverse; animation-duration: 180s; }
+.scrubbing .ring .spin { animation-play-state: paused; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.ring .track, .ring .progress { fill: none; stroke-width: 3; stroke-linecap: round; }
+.ring .track { stroke: var(--line); }
+.ring .progress { stroke: currentColor; filter: url(#glow); }
+.ring .marks circle { fill: var(--surface); stroke: var(--muted); stroke-width: 1; transition: fill .2s, stroke .2s; }
+.ring .marks circle.past { fill: currentColor; stroke: currentColor; }
+.ring .handle { fill: #effff4; stroke: currentColor; stroke-width: 2; filter: url(#glow); }
+.scrubbing .ring .handle { r: 7; }
+
+.scrub-controls { display: flex; justify-content: center; align-items: center; gap: 14px; }
+.scrub-meta { display: flex; gap: 10px; align-items: baseline; min-width: 170px; text-align: left; }
 .scrub-week { font-family: Fraunces, Georgia, serif; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .scrub-date { color: var(--muted); font-size: 14px; }
-.scrub-controls { display: flex; align-items: center; gap: 12px; max-width: 520px; margin: 12px auto 0; }
 .play { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-size: 14px; }
 .play:hover { border-color: var(--time); }
-input[type=range] { flex: 1; accent-color: var(--time); height: 32px; }
 .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
 
 /* ── Timeline ── */
@@ -163,4 +190,5 @@ input[type=range] { flex: 1; accent-color: var(--time); height: 32px; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
+  .ring .spin { animation: none; }
 }
