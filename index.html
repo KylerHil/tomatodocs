@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Life of a Tomato</title>
+  <meta name="description" content="A week-by-week timeline of one tomato: photos, drawings, and scores.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍅</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="wrap hero">
+    <p class="eyebrow" id="range"></p>
+    <h1 id="title"></h1>
+    <p class="lede" id="subtitle"></p>
+  </header>
+
+  <main class="wrap">
+    <!-- 1. Time scrubber -->
+    <section class="scrubber" aria-labelledby="scrub-h">
+      <div class="section-head">
+        <h2 id="scrub-h">Wind back time</h2>
+        <div class="seg" role="group" aria-label="Image type">
+          <button type="button" data-mode="photo" aria-pressed="true">Photo</button>
+          <button type="button" data-mode="drawing" aria-pressed="false">Drawing</button>
+        </div>
+      </div>
+
+      <div class="stage-wrap">
+        <svg class="ring" viewBox="0 0 200 200" aria-hidden="true" id="ring"></svg>
+        <div class="stage" id="stage" tabindex="0" aria-label="Drag left or right to move through time"></div>
+      </div>
+
+      <div class="scrub-meta">
+        <span class="scrub-week" id="scrub-week"></span>
+        <span class="scrub-date" id="scrub-date"></span>
+      </div>
+      <div class="scrub-controls">
+        <button type="button" class="play" id="play" aria-label="Play">▶</button>
+        <input type="range" id="slider" min="0" step="0.001" value="0" aria-label="Time">
+      </div>
+      <p class="hint">Drag across the tomato, use the slider, or press ← →</p>
+    </section>
+
+    <!-- 2. Timeline -->
+    <section aria-labelledby="tl-h">
+      <div class="section-head"><h2 id="tl-h">Week by week</h2></div>
+      <ol class="timeline" id="timeline"></ol>
+      <article class="detail" id="detail"></article>
+    </section>
+
+    <!-- 3. Scores -->
+    <section aria-labelledby="sc-h">
+      <div class="section-head"><h2 id="sc-h">Scores over time</h2><span class="muted">1–10, higher is fresher</span></div>
+      <div class="charts" id="charts"></div>
+    </section>
+  </main>
+
+  <footer class="wrap foot">A tomato, observed.</footer>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
