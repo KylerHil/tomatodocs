@@ -53,11 +53,12 @@
         ${wrinkles.replaceAll("#3a1a0e", ink)}
         ${spots.replace(/fill="#[0-9a-f]+"/g, `fill="none" stroke="${ink}"`)}
         <path d="M100 ${cy - ry + 4} l-18 -6 l14 -2 l-8 -12 l12 8 l6 -12 l4 12 l12 -8 l-6 12 l14 2 z" fill="none" stroke="${ink}" stroke-width="1.5"/>
-        <text x="100" y="188" text-anchor="middle" font-family="Georgia, serif" font-size="10" fill="${ink}" opacity=".6">${weeks[i].style || "sketch"} (placeholder)</text>
+        <text x="100" y="188" text-anchor="middle" font-family="Georgia, serif" font-size="10" fill="${ink}" opacity=".6">${esc(weeks[i].style || "sketch")} (placeholder)</text>
       </svg>`;
     }
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   }
+  const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const src = (i, kind) => weeks[i][kind] || placeholder(i, kind);
 
   // ── Header ─────────────────────────────────────────────────────────────
@@ -154,13 +155,13 @@
   function drawSparks() {
     const s = canvas.width / 240; // canvas spans viewBox -20…220
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const green = getComputedStyle(ring).color;
+    const glow = getComputedStyle(ring).color;
     for (let k = parts.length - 1; k >= 0; k--) {
       const p = parts[k];
       p.x += p.vx; p.y += p.vy; p.vx *= 0.96; p.vy *= 0.96; p.life -= 0.025;
       if (p.life <= 0) { parts.splice(k, 1); continue; }
       ctx.globalAlpha = p.life;
-      ctx.fillStyle = p.hot ? "#fff6c2" : green;
+      ctx.fillStyle = p.hot ? "#ffe680" : glow;  // hot sparks burn gold
       ctx.beginPath();
       ctx.arc((p.x + 20) * s, (p.y + 20) * s, (p.hot ? 0.9 : 1.3) * p.life * s, 0, Math.PI * 2);
       ctx.fill();
@@ -192,6 +193,7 @@
     handle.setAttribute("cx", hx); handle.setAttribute("cy", hy);
     if (wrap.classList.contains("scrubbing") && v !== lastV) emit(START + deg, v - lastV);
     lastV = v;
+    paintBoard();
     marks.forEach((m, k) => m.classList.toggle("past", k <= v + 1e-6));
     const i = Math.round(v);
     wrap.setAttribute("aria-valuenow", weeks[i].week);
@@ -203,7 +205,7 @@
 
   // Smoothly animate v to a target.
   let anim = 0;
-  function tweenTo(target, ms = 450, done) {
+  function tweenTo(target, ms = 1350, done) {
     cancelAnimationFrame(anim);
     const from = v, t0 = performance.now();
     const step = (now) => {
@@ -270,62 +272,157 @@
     if (v >= N - 1) setV(0);
     playing = true; playBtn.textContent = "❚❚"; playBtn.ariaLabel = "Pause";
     wrap.classList.add("scrubbing");
-    tweenTo(N - 1, (N - 1 - v) * 900, () => { stopPlay(); select(N - 1); });
+    tweenTo(N - 1, (N - 1 - v) * 2700, () => { stopPlay(); select(N - 1); });
   });
 
-  document.querySelectorAll(".seg button").forEach((b) =>
+  // Tabs: Photo and Drawing show the path with that image; Reports swaps the
+  // path for the score charts and leaves the dial's image as it was.
+  let view = "path";
+  const tabs = [...document.querySelectorAll(".seg button")];
+  tabs.forEach((b) =>
     b.addEventListener("click", () => {
-      mode = b.dataset.mode;
-      document.querySelectorAll(".seg button").forEach((o) => o.setAttribute("aria-pressed", o === b));
-      buildFrames(); render();
+      if (b.dataset.view) view = b.dataset.view;
+      else { view = "path"; if (b.dataset.mode !== mode) { mode = b.dataset.mode; buildFrames(); paintImages(); render(); } }
+      tabs.forEach((o) => o.setAttribute("aria-pressed", o === b));
+      // toggleAttribute, because the board is an <svg> and SVG elements ignore .hidden
+      board.toggleAttribute("hidden", view !== "path");
+      detail.hidden = view !== "path";
+      charts.hidden = view !== "reports";
+      placeCard();
     })
   );
 
   onSelect((i) => { if (!drag && !playing && Math.abs(v - i) > 0.01) tweenTo(i); });
 
-  // ── Timeline ───────────────────────────────────────────────────────────
-  const tl = $("#timeline");
-  weeks.forEach((w, i) => {
-    const li = document.createElement("li");
-    li.innerHTML = `<button type="button" class="tl-btn">
-      <img alt="" src="${src(i, "photo")}">
-      <span class="tl-week">Week ${w.week}</span>
-      <span class="tl-date">${fmtDate(w.date)}</span></button>`;
-    li.firstElementChild.addEventListener("click", () => select(i));
-    tl.appendChild(li);
+  // ── Path board: the weeks on a road that runs back to the horizon ────────
+  // Week 1 stands up front, the last week at the far end. The board is a camera:
+  // as the dial winds, it travels down the road, zooming so the current point on
+  // the path always sits on the same spot (SPOT) at the same size. Weeks fade
+  // out as they pass the camera, and the week card rides beside that spot.
+  const board = $("#board"), detail = $("#detail");
+  const BW = 600, BH = 560, VX = 250, VY = 36, NEAR = 520;
+  const proj = (x, z) => { const s = 1 / (1 + 2.5 * z); return [VX + x * 270 * s, VY + (NEAR - VY) * s, s]; };
+  const pathX = (u) => -0.5 * Math.sin(u * 2.3 * Math.PI + 0.5);
+  const at = (u) => proj(pathX(u), u);
+  const uOf = (x) => (N > 1 ? x / (N - 1) : 0);
+  const pts = (list) => list.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const SAMPLES = [...Array(81)].map((_, k) => k / 80);
+  const line = ([x1, y1], [x2, y2]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+
+  const grid = [-1.6, -1.2, -0.8, -0.4, 0, 0.4, 0.8, 1.2, 1.6].map((x) => line(proj(x, -0.3), proj(x, 3)))
+    .concat([...Array(25)].map((_, k) => k * 0.1 - 0.3).map((z) => line(proj(-2, z), proj(2, z)))).join("");
+  const road = pts(SAMPLES.map((u) => proj(pathX(u) - 0.12, u)).concat(SAMPLES.slice().reverse().map((u) => proj(pathX(u) + 0.12, u))));
+  const [sx, sy] = at(0);
+  const nodePos = weeks.map((_, i) => { const [x, y, s] = at(uOf(i)); const r = 56 * s; return { x, y, s, r, cy: y - r * 1.05 }; });
+
+  board.innerHTML = `
+    <defs>
+      <clipPath id="node-clip" clipPathUnits="objectBoundingBox"><circle cx=".5" cy=".5" r=".5"/></clipPath>
+      <radialGradient id="grid-fade-g" cx=".45" cy=".7" r=".6"><stop offset=".4" stop-color="#fff"/><stop offset="1" stop-color="#000"/></radialGradient>
+      <mask id="grid-fade" maskUnits="userSpaceOnUse" x="0" y="0" width="${BW}" height="${BH}"><rect id="grid-fade-r" width="${BW}" height="${BH}" fill="url(#grid-fade-g)"/></mask>
+      <linearGradient id="horizon" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" style="stop-color:var(--bg)"/><stop offset="1" style="stop-color:var(--bg);stop-opacity:0"/>
+      </linearGradient>
+    </defs>
+    <g class="b-grid" mask="url(#grid-fade)">${grid}</g>
+    <rect x="0" y="0" width="${BW}" height="${VY + 150}" fill="url(#horizon)"/>
+    <polygon class="b-road" points="${road}"/>
+    <polyline class="b-center" points="${pts(SAMPLES.map(at))}"/>
+    <polyline class="b-trail" id="trail"/>
+    <text class="b-end" id="start-label" x="${sx + 46}" y="${sy + 16}">START · ${fmtDate(weeks[0].date).toUpperCase()}</text>
+    <g id="nodes">${weeks.map((w, i) => {
+      const { x, y, s, r, cy } = nodePos[i];
+      return `<g class="b-node" data-i="${i}" tabindex="0" role="button" aria-label="Week ${w.week}, ${fmtDate(w.date)}">
+        <ellipse class="b-shadow" cx="${x}" cy="${y}" rx="${r * 0.9}" ry="${r * 0.22}"/>
+        <circle class="b-glow" cx="${x}" cy="${cy}" r="${r + 7}"/>
+        <image x="${x - r}" y="${cy - r}" width="${2 * r}" height="${2 * r}" clip-path="url(#node-clip)" preserveAspectRatio="xMidYMid slice"/>
+        <circle class="b-ring" cx="${x}" cy="${cy}" r="${r + 1}"/>
+        <text class="b-label" x="${x}" y="${y + 6 + 14 * s}" font-size="${(8 + 7 * s).toFixed(1)}">W${w.week}</text>
+      </g>`;
+    }).reverse().join("")}</g>`;  // far weeks first, so near ones paint on top
+
+  const trail = $("#trail"), startLabel = $("#start-label");
+  const fade = [board.querySelector("#grid-fade"), $("#grid-fade-r")];
+  const nodeEls = [...board.querySelectorAll(".b-node")].sort((a, b) => a.dataset.i - b.dataset.i);
+  const paintImages = () => nodeEls.forEach((g, i) => g.querySelector("image").setAttribute("href", src(i, mode)));
+
+  const labels = nodeEls.map((g) => g.querySelector(".b-label"));
+  const SPOT = { x: 190, y: 300, r: 64 };  // where, and how big, the current week appears (board units)
+
+  let shown = -1;
+  function paintBoard() {
+    const cut = uOf(v);
+    trail.setAttribute("points", pts(SAMPLES.filter((u) => u < cut).map(at).concat([at(cut)])));
+
+    // Camera: zoom by how much smaller the current point is than week 1, and pan
+    // so it lands on week 1's spot. At week 1 this is the whole board.
+    const [px, py, ps] = at(cut), k = (56 * ps) / SPOT.r, pcy = py - 56 * ps * 1.05;
+    const vb = [px - SPOT.x * k, pcy - SPOT.y * k, BW * k, BH * k];
+    board.setAttribute("viewBox", vb.map((n) => n.toFixed(2)).join(" "));
+    fade.forEach((el) => ["x", "y", "width", "height"].forEach((a, j) => el.setAttribute(a, vb[j])));
+    nodeEls.forEach((g, j) => {
+      const a = nodePos[j].r / k / SPOT.r;  // on-screen size, 1 = the current week
+      // Keep labels the same size on screen while the camera zooms.
+      labels[j].setAttribute("font-size", ((9 + 6 * Math.min(a, 1)) * k).toFixed(2));
+      // Weeks you've passed fade out as they slide past the camera.
+      const op = Math.max(0, Math.min(1, (1.25 - a) / 0.2));
+      g.style.opacity = op;
+      g.style.pointerEvents = op < 0.2 ? "none" : "";
+    });
+    startLabel.setAttribute("font-size", (9 * k).toFixed(2));
+
+    const i = Math.round(v);
+    nodeEls.forEach((g, k) => { g.classList.toggle("past", k <= v + 1e-6); g.classList.toggle("sel", k === i); });
+    if (i !== shown) { shown = i; renderDetail(i); chartSel.forEach((fn) => fn(i)); placeCard(); }
+  }
+
+  // The card sits just right of SPOT, which never moves on screen, so it only
+  // needs placing on resize, on a new week, and when the path comes back.
+  function placeCard() {
+    const r = board.getBoundingClientRect();
+    if (!r.width || getComputedStyle(detail).position !== "absolute") return;
+    const m = Math.min(r.width / BW, r.height / BH), ox = (r.width - BW * m) / 2, oy = (r.height - BH * m) / 2;
+    const w = detail.offsetWidth, h = detail.offsetHeight;
+    const left = Math.min(ox + (SPOT.x + SPOT.r + 24) * m, r.width - w);
+    const top = Math.max(0, Math.min(oy + (SPOT.y - SPOT.r * 0.6) * m, r.height - h));
+    detail.style.setProperty("--card-x", left + "px");
+    detail.style.setProperty("--card-y", top + "px");
+  }
+  addEventListener("resize", placeCard);
+  addEventListener("load", placeCard);  // fonts can change the card height
+
+  nodeEls.forEach((g, i) => {
+    g.addEventListener("click", () => { stopPlay(); select(i); });
+    g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stopPlay(); select(i); } });
   });
 
-  const detail = $("#detail");
   function renderDetail(i) {
     const w = weeks[i];
-    [...tl.querySelectorAll(".tl-btn")].forEach((b, k) => b.setAttribute("aria-current", k === i));
-    const li = tl.children[i];
-    if (li.offsetLeft < tl.scrollLeft || li.offsetLeft + li.offsetWidth > tl.scrollLeft + tl.clientWidth)
-      tl.scrollTo({ left: li.offsetLeft - tl.clientWidth / 2 + li.offsetWidth / 2, behavior: "smooth" });
     detail.innerHTML = `
-      <figure><img alt="Photo, week ${w.week}" src="${src(i, "photo")}"><figcaption><strong>Photo</strong></figcaption></figure>
-      <figure><img alt="Drawing, week ${w.week}" src="${src(i, "drawing")}"><figcaption><strong>Drawing</strong> · ${w.style || "—"}</figcaption></figure>
-      <div class="info">
-        <h3>Week ${w.week}</h3>
-        <p class="date">${fmtDate(w.date, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
-        <dl class="meters">${D.metrics.map((m) => {
-          const s = w.scores?.[m.key];
-          return `<div class="meter"><dt>${m.label}</dt><div class="bar"><span style="width:${(s ?? 0) * 10}%"></span></div><dd>${s ?? "–"}</dd></div>`;
-        }).join("")}</dl>
-        ${w.notes ? `<p class="notes">${w.notes}</p>` : ""}
-      </div>`;
+      <h3>Week ${w.week}${w.style ? `<span class="style"> · ${w.style}</span>` : ""}</h3>
+      <p class="date">${fmtDate(w.date, { weekday: "long", month: "long", day: "numeric" })}</p>
+      ${w.notes ? `<p class="notes">${w.notes}</p>` : ""}
+      <dl class="meters">${D.metrics.map((m) => {
+        const s = w.scores?.[m.key];
+        return `<div class="meter" title="${m.hint || ""}"><dt>${m.label}</dt><div class="bar"><span style="width:${(s ?? 0) * 10}%"></span></div><dd>${s ?? "–"}</dd></div>`;
+      }).join("")}</dl>`;
   }
-  onSelect(renderDetail);
 
-  // ── Charts: one small chart per metric, shared 0–10 scale ──────────────
-  const W = 300, H = 130, PL = 22, PR = 10, PT = 10, PB = 20;
+  // ── Reports: one small chart per score, plus the average, shared 0–10 scale ──
+  const W = 300, H = 120, PL = 22, PR = 10, PT = 10, PB = 20;
   const x = (i) => PL + (N > 1 ? (i / (N - 1)) * (W - PL - PR) : (W - PL - PR) / 2);
   const y = (s) => PT + (1 - s / 10) * (H - PT - PB);
   const charts = $("#charts");
   const chartSel = [];
+  const average = (w) => {
+    const vals = D.metrics.map((m) => w.scores?.[m.key]).filter((s) => s != null);
+    return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null;
+  };
+  const series = D.metrics.map((m) => ({ ...m, score: (w) => w.scores?.[m.key] }))
+    .concat({ key: "average", label: "Average", hint: "All five scores together", score: average });
 
-  D.metrics.forEach((m) => {
-    const pts = weeks.map((w, i) => [i, w.scores?.[m.key]]).filter(([, s]) => s != null);
+  series.forEach((m) => {
+    const pts = weeks.map((w, i) => [i, m.score(w)]).filter(([, s]) => s != null);
     const card = document.createElement("div");
     card.className = "chart";
     const path = pts.map(([i, s], k) => `${k ? "L" : "M"}${x(i)},${y(s)}`).join("");
@@ -351,35 +448,39 @@
     const svg = card.querySelector("svg"), cross = card.querySelector(".cross");
     const tip = document.createElement("div");
     tip.className = "tip"; tip.hidden = true; card.appendChild(tip);
+    // The chart is letterboxed inside its cell, so map through the drawn box, not the element box.
+    const box = () => {
+      const r = svg.getBoundingClientRect(), k = Math.min(r.width / W, r.height / H);
+      return { left: r.left + (r.width - W * k) / 2, top: r.top + (r.height - H * k) / 2, k };
+    };
     const nearest = (e) => {
-      const r = svg.getBoundingClientRect();
-      const px = ((e.clientX - r.left) / r.width) * W;
+      const b = box(), px = (e.clientX - b.left) / b.k;
       return Math.max(0, Math.min(N - 1, Math.round(((px - PL) / (W - PL - PR)) * (N - 1))));
     };
     const hit = card.querySelector(".hit");
     hit.addEventListener("pointermove", (e) => {
-      const i = nearest(e), s = weeks[i].scores?.[m.key];
+      const i = nearest(e), s = m.score(weeks[i]);
       cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
-      const r = svg.getBoundingClientRect(), cr = card.getBoundingClientRect();
+      const b = box(), cr = card.getBoundingClientRect();
       tip.hidden = false;
       tip.textContent = `Week ${weeks[i].week} · ${s ?? "no score"}`;
-      tip.style.left = r.left - cr.left + (x(i) / W) * r.width + "px";
-      tip.style.top = r.top - cr.top + (y(s ?? 10) / H) * r.height - 6 + "px";
+      tip.style.left = b.left - cr.left + x(i) * b.k + "px";
+      tip.style.top = b.top - cr.top + y(s ?? 10) * b.k - 6 + "px";
     });
     hit.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); });
-    hit.addEventListener("click", (e) => select(nearest(e)));
+    hit.addEventListener("click", (e) => { stopPlay(); select(nearest(e)); });
 
     chartSel.push((i) => {
       card.querySelectorAll(".dot").forEach((d) => d.classList.toggle("sel", +d.dataset.i === i));
-      const s = weeks[i].scores?.[m.key];
+      const s = m.score(weeks[i]);
       card.querySelector(".now").textContent = `Week ${weeks[i].week}: ${s ?? "–"}/10`;
     });
   });
-  onSelect((i) => chartSel.forEach((fn) => fn(i)));
 
   // ── Go ─────────────────────────────────────────────────────────────────
   fitCanvas();
   buildFrames();
+  paintImages();
   render();
   select(0);
 })();

@@ -2,9 +2,12 @@
 
 A small static site that follows one tomato week by week: a photo, a drawing in a new style, and scores for firmness, smell, freshness, color, and skin.
 
-- **Wind back time**: drag across the tomato (or use the slider / play button) and the weekly photos crossfade forward and backward in time.
-- **Week by week**: a timeline with each week's photo, drawing, scores, and notes.
-- **Scores over time**: one small chart per score.
+Everything fits on one screen, with no scrolling:
+
+- **Wind back time**: the Time Stone dial. Wind the ring, grab the tomato and turn it, press play, or use ← →, and the weekly photos crossfade forward and backward in time.
+- **The path**: every week stands on a road from the first week to the last at the horizon. Winding the dial travels down the road: the camera zooms in so the current week always sits in the same spot, the weeks ahead come toward you, and passed weeks fade away. Click a week to jump to it.
+- **This week's card**: rides beside the current week on the path, with the drawing style, the notes, and the five scores.
+- **Reports**: the third tab swaps the path for one chart per score plus their average. The week the dial is on is marked, and clicking a chart jumps to that week.
 
 No build step and no dependencies. Open `index.html` in a browser.
 
