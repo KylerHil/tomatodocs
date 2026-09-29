@@ -53,7 +53,7 @@
         ${wrinkles.replaceAll("#3a1a0e", ink)}
         ${spots.replace(/fill="#[0-9a-f]+"/g, `fill="none" stroke="${ink}"`)}
         <path d="M100 ${cy - ry + 4} l-18 -6 l14 -2 l-8 -12 l12 8 l6 -12 l4 12 l12 -8 l-6 12 l14 2 z" fill="none" stroke="${ink}" stroke-width="1.5"/>
-        <text x="100" y="188" text-anchor="middle" font-family="Georgia, serif" font-size="10" fill="${ink}" opacity=".6">${esc(weeks[i].style || "sketch")} (placeholder)</text>
+        <text x="100" y="188" text-anchor="middle" font-family="Georgia, serif" font-size="10" fill="${ink}" opacity=".6">${esc(weeks[i].technique || "sketch")} (placeholder)</text>
       </svg>`;
     }
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
@@ -70,7 +70,10 @@
   if (!N) return;
 
   // ── State ──────────────────────────────────────────────────────────────
-  let mode = "photo";
+  // Divider position across the dial: 0 = all photo, 1 = all drawing.
+  // Drawing sits on the left of the line, photo on the right.
+  let split = 0.5;
+  const leading = () => (split >= 0.5 ? "drawing" : "photo");
   let v = 0;          // continuous time position, 0 … N-1
   let sel = 0;        // selected week index
   const listeners = [];
@@ -81,7 +84,7 @@
   }
 
   // ── Scrubber ───────────────────────────────────────────────────────────
-  const stage = $("#stage"), wrap = $(".stage-wrap"), ring = $("#ring");
+  const stage = $("#stage"), frames = $("#frames"), wrap = $(".stage-wrap"), ring = $("#ring");
 
   // The ring is the time dial: 12 o'clock is week 1, going clockwise, with a
   // small gap at the top so the first and last weeks don't touch.
@@ -170,21 +173,20 @@
     sparkLoop = parts.length ? requestAnimationFrame(drawSparks) : 0;
   }
 
+  // One frame per week, each holding the drawing with the photo laid over it.
+  // The photo is clipped to the right of the divider (see --split in styles.css).
   function buildFrames() {
-    stage.innerHTML = "";
-    weeks.forEach((w, i) => {
-      const img = new Image();
-      img.alt = `Week ${w.week} ${mode}`;
-      img.src = src(i, mode);
-      img.draggable = false;
-      stage.appendChild(img);
-    });
+    frames.innerHTML = weeks.map((w, i) => `
+      <div class="frame">
+        <img class="drawing" src="${src(i, "drawing")}" alt="Week ${w.week} drawing" draggable="false">
+        <img class="photo" src="${src(i, "photo")}" alt="Week ${w.week} photo" draggable="false">
+      </div>`).join("");
   }
 
   function render() {
     const lo = Math.floor(v), frac = v - lo;
-    [...stage.children].forEach((img, i) => {
-      img.style.opacity = i === lo ? 1 : i === lo + 1 ? frac : 0;
+    [...frames.children].forEach((f, i) => {
+      f.style.opacity = i === lo ? 1 : i === lo + 1 ? frac : 0;
     });
     [15, -35, 60].forEach((speed, k) => layers[k].setAttribute("transform", `rotate(${v * speed} 100 100)`));
     const deg = N > 1 ? (v / (N - 1)) * SWEEP : 0;
@@ -275,24 +277,56 @@
     tweenTo(N - 1, (N - 1 - v) * 2700, () => { stopPlay(); select(N - 1); });
   });
 
-  // Tabs: Photo and Drawing show the path with that image; Reports swaps the
-  // path for the score charts and leaves the dial's image as it was.
+  // Tabs: Timeline shows the path; Reports and Notes swap it for the score
+  // charts or the scoring method. The dial stays as it was.
   let view = "path";
   const tabs = [...document.querySelectorAll(".seg button")];
   tabs.forEach((b) =>
     b.addEventListener("click", () => {
-      if (b.dataset.view) view = b.dataset.view;
-      else { view = "path"; if (b.dataset.mode !== mode) { mode = b.dataset.mode; buildFrames(); paintImages(); render(); } }
+      view = b.dataset.view;
       tabs.forEach((o) => o.setAttribute("aria-pressed", o === b));
       // toggleAttribute, because the board is an <svg> and SVG elements ignore .hidden
       board.toggleAttribute("hidden", view !== "path");
       detail.hidden = view !== "path";
       charts.hidden = view !== "reports";
+      method.hidden = view !== "notes";
       placeCard();
     })
   );
 
   onSelect((i) => { if (!drag && !playing && Math.abs(v - i) > 0.01) tweenTo(i); });
+
+  // Drawing ↔ photo divider. It handles its own pointer and keys so dragging it
+  // wipes between the two instead of winding time.
+  const splitEl = $("#split"), tags = [$("#tag-drawing"), $("#tag-photo")];
+  function setSplit(p) {
+    const was = leading();
+    split = Math.max(0, Math.min(1, p));
+    stage.style.setProperty("--split", split);
+    splitEl.setAttribute("aria-valuenow", Math.round(split * 100));
+    splitEl.setAttribute("aria-valuetext", `${Math.round(split * 100)}% drawing, ${Math.round((1 - split) * 100)}% photo`);
+    tags[0].style.opacity = split > 0.4 ? 1 : 0;  // hide a tag before the line reaches it
+    tags[1].style.opacity = split < 0.6 ? 1 : 0;
+    paintSplit();
+    if (leading() !== was && shown >= 0) { renderDetail(shown); placeCard(); }
+  }
+  let splitting = false;
+  const splitAt = (e) => { const r = stage.getBoundingClientRect(); return (e.clientX - r.left) / r.width; };
+  splitEl.addEventListener("pointerdown", (e) => {
+    e.stopPropagation(); e.preventDefault();
+    splitting = true; splitEl.setPointerCapture(e.pointerId); splitEl.classList.add("dragging");
+  });
+  splitEl.addEventListener("pointermove", (e) => { if (splitting) setSplit(splitAt(e)); });
+  const endSplit = () => { splitting = false; splitEl.classList.remove("dragging"); };
+  splitEl.addEventListener("pointerup", endSplit);
+  splitEl.addEventListener("pointercancel", endSplit);
+  splitEl.addEventListener("keydown", (e) => {
+    const step = { ArrowLeft: -0.05, ArrowDown: -0.05, ArrowRight: 0.05, ArrowUp: 0.05 }[e.key];
+    const to = { Home: 0, End: 1 }[e.key];
+    if (step == null && to == null) return;
+    e.preventDefault(); e.stopPropagation();
+    setSplit(to ?? split + step);
+  });
 
   // ── Path board: the weeks on a road that runs back to the horizon ────────
   // Week 1 stands up front, the last week at the far end. The board is a camera:
@@ -335,7 +369,11 @@
       return `<g class="b-node" data-i="${i}" tabindex="0" role="button" aria-label="Week ${w.week}, ${fmtDate(w.date)}">
         <ellipse class="b-shadow" cx="${x}" cy="${y}" rx="${r * 0.9}" ry="${r * 0.22}"/>
         <circle class="b-glow" cx="${x}" cy="${cy}" r="${r + 7}"/>
-        <image x="${x - r}" y="${cy - r}" width="${2 * r}" height="${2 * r}" clip-path="url(#node-clip)" preserveAspectRatio="xMidYMid slice"/>
+        <clipPath id="node-split-${i}"><rect x="${x - r}" y="${cy - r}" width="${2 * r}" height="${2 * r}"/></clipPath>
+        <g clip-path="url(#node-clip)">
+          <image class="n-drawing" x="${x - r}" y="${cy - r}" width="${2 * r}" height="${2 * r}" preserveAspectRatio="xMidYMid slice"/>
+          <g clip-path="url(#node-split-${i})"><image class="n-photo" x="${x - r}" y="${cy - r}" width="${2 * r}" height="${2 * r}" preserveAspectRatio="xMidYMid slice"/></g>
+        </g>
         <circle class="b-ring" cx="${x}" cy="${cy}" r="${r + 1}"/>
         <text class="b-label" x="${x}" y="${y + 6 + 14 * s}" font-size="${(8 + 7 * s).toFixed(1)}">W${w.week}</text>
       </g>`;
@@ -344,7 +382,19 @@
   const trail = $("#trail"), startLabel = $("#start-label");
   const fade = [board.querySelector("#grid-fade"), $("#grid-fade-r")];
   const nodeEls = [...board.querySelectorAll(".b-node")].sort((a, b) => a.dataset.i - b.dataset.i);
-  const paintImages = () => nodeEls.forEach((g, i) => g.querySelector("image").setAttribute("href", src(i, mode)));
+  const paintImages = () => nodeEls.forEach((g, i) => {
+    g.querySelector(".n-drawing").setAttribute("href", src(i, "drawing"));
+    g.querySelector(".n-photo").setAttribute("href", src(i, "photo"));
+  });
+  // Each week on the path shows the same drawing/photo split as the dial.
+  const splitRects = nodeEls.map((g) => g.querySelector("clipPath rect"));
+  function paintSplit() {
+    splitRects.forEach((rect, i) => {
+      const { x, r } = nodePos[i];
+      rect.setAttribute("x", x - r + 2 * r * split);
+      rect.setAttribute("width", 2 * r * (1 - split));
+    });
+  }
 
   const labels = nodeEls.map((g) => g.querySelector(".b-label"));
   const SPOT = { x: 190, y: 300, r: 64 };  // where, and how big, the current week appears (board units)
@@ -396,12 +446,17 @@
     g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stopPlay(); select(i); } });
   });
 
+  // Drawing and photo each have their own notes; the card shows the ones for
+  // whichever takes up more of the dial.
   function renderDetail(i) {
-    const w = weeks[i];
+    const w = weeks[i], mode = leading();
+    const notes = mode === "photo" ? w.photoNotes : w.thoughts;
     detail.innerHTML = `
-      <h3>Week ${w.week}${w.style ? `<span class="style"> · ${w.style}</span>` : ""}</h3>
-      <p class="date">${fmtDate(w.date, { weekday: "long", month: "long", day: "numeric" })}</p>
-      ${w.notes ? `<p class="notes">${w.notes}</p>` : ""}
+      <p class="date">Week ${w.week} · ${fmtDate(w.date, { weekday: "long", month: "long", day: "numeric" })}</p>
+      <h3>${w.technique || "Untitled technique"}</h3>
+      ${mode === "drawing" && w.liked != null ? `<p class="verdict ${w.liked ? "yes" : "no"}">${w.liked ? "Liked it" : "Didn't like it"}</p>` : ""}
+      ${notes ? `<p class="notes-head">${mode === "photo" ? "Photo notes" : "Drawing notes"}</p><p class="notes">${notes}</p>` : ""}
+      <p class="meters-head">How the tomato is holding up</p>
       <dl class="meters">${D.metrics.map((m) => {
         const s = w.scores?.[m.key];
         return `<div class="meter" title="${m.hint || ""}"><dt>${m.label}</dt><div class="bar"><span style="width:${(s ?? 0) * 10}%"></span></div><dd>${s ?? "–"}</dd></div>`;
@@ -477,10 +532,29 @@
     });
   });
 
+  // ── Notes: how each score is taken ───────────────────────────────────
+  const method = $("#method");
+  const M = D.method || {};
+  method.innerHTML = `
+    <section class="rule">
+      <p class="kicker">The one rule</p>
+      <h3>${M.rule || ""}</h3>
+      ${M.intro ? `<p>${M.intro}</p>` : ""}
+      ${M.order ? `<p class="order">${M.order}</p>` : ""}
+      ${M.exception ? `<p class="exception">${M.exception}</p>` : ""}
+    </section>
+    ${D.metrics.map((m) => `
+      <section class="how">
+        <h3>${m.label}</h3>
+        <p>${m.method || ""}</p>
+        ${m.hint ? `<p class="scale">1–10 · ${m.hint}</p>` : ""}
+      </section>`).join("")}`;
+
   // ── Go ─────────────────────────────────────────────────────────────────
   fitCanvas();
   buildFrames();
   paintImages();
+  setSplit(split);
   render();
   select(0);
 })();

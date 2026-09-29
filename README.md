@@ -1,13 +1,14 @@
 # The Life of a Tomato
 
-A small static site that follows one tomato week by week: a photo, a drawing in a new style, and scores for firmness, smell, freshness, color, and skin.
+A small static site that follows one tomato week by week, drawn each week in a new technique. Each week has the drawing, what I thought of the technique, a reference photo, and scores for how the tomato is holding up (firmness, smell, freshness, color, skin).
 
 Everything fits on one screen, with no scrolling:
 
-- **Wind back time**: the Time Stone dial. Wind the ring, grab the tomato and turn it, press play, or use ← →, and the weekly photos crossfade forward and backward in time.
+- **Wind back time**: the Time Stone dial. Wind the ring, grab the tomato and turn it, press play, or use ← →, and the weeks crossfade forward and backward in time. A line across the dial wipes between the drawing (left) and the photo (right); leave it in the middle for half of each.
 - **The path**: every week stands on a road from the first week to the last at the horizon. Winding the dial travels down the road: the camera zooms in so the current week always sits in the same spot, the weeks ahead come toward you, and passed weeks fade away. Click a week to jump to it.
-- **This week's card**: rides beside the current week on the path, with the drawing style, the notes, and the five scores.
+- **This week's card**: rides beside the current week on the path, with the technique, whether I liked it, notes for whichever of drawing or photo fills more of the dial, and the five scores.
 - **Reports**: the third tab swaps the path for one chart per score plus their average. The week the dial is on is marked, and clicking a chart jumps to that week.
+- **Notes**: how each score is taken (a quick squeeze, a sniff up close, a look), and the one rule behind all of them: the tomato is never moved. The text lives in `method` and each metric's `method` in `data.js`.
 
 No build step and no dependencies. Open `index.html` in a browser.
 
@@ -19,18 +20,20 @@ No build step and no dependencies. Open `index.html` in a browser.
 
 ```js
 {
-  week: 7, date: "2026-11-02",
+  week: 7, date: "2026-10-28",
   photo: "images/photos/week-07.jpg",
   drawing: "images/drawings/week-07.jpg",
-  style: "Cubism",
+  technique: "Cubism",
+  liked: true,           // did the technique feel good to use?
+  thoughts: "…",           // about the drawing
+  photoNotes: "…",         // about the photo
   scores: { firmness: 1, smell: 1, freshness: 1, color: 1, skin: 1 },
-  notes: "…",
 },
 ```
 
 When `photo` or `drawing` is `null`, the site draws a placeholder tomato.
 
-Drawing style ideas: graphite, watercolor, ink crosshatch, pixel art, charcoal, pointillism, cubism, blind contour, colored pencil, digital/vector, comic panel, one continuous line.
+Technique ideas: graphite, watercolor, ink crosshatch, pixel art, charcoal, pointillism, cubism, blind contour, colored pencil, digital/vector, comic panel, one continuous line.
 
 ## Hosting (GitHub Pages)
 
