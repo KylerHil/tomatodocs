@@ -56,7 +56,7 @@ window.TOMATO = {
       liked: false,
       thoughts: "Very hard to use.",
       photoNotes: "My wife moved the tomato by accident with a jar, so this photo is from a different angle.",
-      scores: { firmness: 9.5, smell: 10, freshness: 9.5, color: 10, skin: 10 },
+      scores: { firmness: 8.5, smell: 9.7, freshness: 9.5, color: 10, skin: 10 },
     },
   ],
 };
