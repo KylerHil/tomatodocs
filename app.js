@@ -174,7 +174,7 @@
   }
 
   // One frame per week, each holding the drawing with the photo laid over it.
-  // The photo is clipped to the right of the divider (see --split in styles.css).
+  // The photo is clipped to the right of the divider (see --split in css/).
   function buildFrames() {
     frames.innerHTML = weeks.map((w, i) => `
       <div class="frame">
@@ -280,7 +280,7 @@
   // Tabs: Timeline shows the path; Reports and Notes swap it for the score
   // charts or the scoring method. The dial stays as it was.
   let view = "path";
-  const tabs = [...document.querySelectorAll(".seg button")];
+  const tabs = [...document.querySelectorAll("[data-view]")];
   tabs.forEach((b) =>
     b.addEventListener("click", () => {
       view = b.dataset.view;
@@ -295,6 +295,25 @@
   );
 
   onSelect((i) => { if (!drag && !playing && Math.abs(v - i) > 0.01) tweenTo(i); });
+
+  // Style versions: swap the stylesheet to show the first draft or v2. The
+  // layout changes, so fire a resize once it loads to re-fit the card and sparks.
+  const theme = $("#theme");
+  const versions = [...document.querySelectorAll("[data-css]")];
+  function useCss(href) {
+    if (!versions.some((b) => b.dataset.css === href)) return;
+    versions.forEach((b) => b.setAttribute("aria-pressed", b.dataset.css === href));
+    if (theme.getAttribute("href") === href) return;
+    theme.addEventListener("load", () => dispatchEvent(new Event("resize")), { once: true });
+    theme.setAttribute("href", href);
+  }
+  versions.forEach((b) =>
+    b.addEventListener("click", () => {
+      useCss(b.dataset.css);
+      try { localStorage.setItem("css", b.dataset.css); } catch {}
+    })
+  );
+  try { useCss(localStorage.getItem("css")); } catch {}
 
   // Drawing ↔ photo divider. It handles its own pointer and keys so dragging it
   // wipes between the two instead of winding time.

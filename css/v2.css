@@ -1,7 +1,7 @@
-/* Partial styles: about a third of the full design is back.
-   The full design is saved in styles.backup.css.
-   Back so far: brand colors and dark mode, typography and the header,
-   the view toggle, the dial's drawing/photo divider, and the week card. */
+/* v2: brand colors and dark mode, fonts and header, the view toggle,
+   the dial's drawing/photo divider, and the week card.
+   The plain v1 is css/v1.css; the header toggle switches between them.
+   The original full design is kept in css/backup.css. */
 
 /* Michigan Tech brand palette (mtu.edu/umc/resources/brand/visual-identity).
    Official: Gold #ffcd00, Black #000000, Dark Grey #454646, White #ffffff,
